@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>UX Machina-3d-element</title>
+    <link href="style.css" rel="stylesheet" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+           "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/index.js",
+          "gsap/ScrollTrigger": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/ScrollTrigger.js",
+           "gsap/EasePack": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/EasePack.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <section id="section">
+        <div id="scroll-space"> 
+            <div id="canvas-container">
+                <canvas id="hero-canvas">
+
+                </canvas>
+            </div>
+        </div>
+    </section>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

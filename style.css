@@ -1,0 +1,33 @@
+body {
+  margin: 0;
+}
+canvas {
+  display: block;
+}
+
+#section {
+  width: 100%;
+}
+#scroll-space {
+  width: 100%;
+  height: 1000vh;
+  position: relative;
+}
+#canvas-container {
+  width: 100%;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  background: linear-gradient(
+    to bottom right,
+    /* The direction of the gradient */ black 0%,
+    /* Starts with black */ red 35%,
+    /* Fades to red */ #ff7445 65% /* Ends with orange */
+  );
+}
+#hero-canvas {
+  width: 100%;
+  height: 100%;
+}
