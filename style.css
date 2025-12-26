@@ -1,5 +1,6 @@
 body {
   margin: 0;
+  background-color: #000; /* Fallback */
 }
 canvas {
   display: block;
@@ -10,7 +11,7 @@ canvas {
 }
 #scroll-space {
   width: 100%;
-  height: 1000vh;
+  height: 1200vh; /* Increased to accommodate new animations */
   position: relative;
 }
 #canvas-container {
@@ -22,9 +23,9 @@ canvas {
   overflow: hidden;
   background: linear-gradient(
     to bottom right,
-    /* The direction of the gradient */ black 0%,
-    /* Starts with black */ red 35%,
-    /* Fades to red */ #ff7445 65% /* Ends with orange */
+    black 0%,
+    red 35%,
+    #ff7445 65%
   );
 }
 #hero-canvas {
