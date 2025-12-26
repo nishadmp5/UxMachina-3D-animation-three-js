@@ -49,7 +49,7 @@ class App {
 
     // --- Models ---
     this.models = new Models();
-    this.models.group.rotation.y = -0.75; // Initial Rotation
+    this.models.group.rotation.y = -0.75;
 
     this.models.group.traverse((child) => {
       if (child.isMesh) {
@@ -64,6 +64,16 @@ class App {
 
     this.mousePosition = new THREE.Vector2();
     this.targetRotation = { x: 0, y: 0 };
+
+    // --- CENTRAL STATE OBJECT ---
+    // GSAP will only modify these numbers. 
+    // The visual updates happen in the animate() loop.
+    this.state = {
+      reveal: 0,   // 0 to 1 (Rotation)
+      joint: 0,    // 0 to 1 (Snap together)
+      scale: 0,    // 0 to 1 (Rods grow)
+      collapse: 0, // 0 to 1 (Final merge)
+    };
 
     this.setupMouseListener();
     this.setupScrollAnimation();
@@ -86,94 +96,7 @@ class App {
   }
 
   setupScrollAnimation() {
-    const direction = new THREE.Vector3(0, 1, 0);
-    const tempVec = new THREE.Vector3(); // Reusable vector to prevent garbage collection
-
-    // --- Update Helpers ---
-
-    // 1. Reveal (Rotation & Position)
-    const updateMaceRevealAnimation = (progress) => {
-      this.models.maces.forEach((mace, index) => {
-        const startQuaternion = this.models.initialQuaternions[index];
-        const endQuaternion = this.models.firstAnimationQuaternions[index];
-        
-        // Always calculate from clean start to end
-        mace.quaternion.copy(startQuaternion).slerp(endQuaternion, progress);
-
-        // Deterministic Position Calculation
-        direction.set(0, 1, 0).applyQuaternion(mace.quaternion);
-        mace.position.copy(direction.multiplyScalar(3));
-      });
-    };
-
-    // 2. Joints (Position Only)
-    const updateMaceJointAnimation = (progress) => {
-      this.models.maces.forEach((mace, index) => {
-        // We must re-calculate the direction based on the fixed quaternion
-        // to ensure we aren't relying on a "dirty" previous frame state
-        const currentQuaternion = this.models.firstAnimationQuaternions[index];
-        direction.set(0, 1, 0).applyQuaternion(currentQuaternion);
-        
-        const distance = THREE.MathUtils.lerp(3, 2, progress);
-        mace.position.copy(direction.multiplyScalar(distance));
-      });
-    };
-
-    // 3. Scale Rods
-    const updateRodScaleAnimation = (progress) => {
-      const lengthScale = THREE.MathUtils.lerp(1, 1.8, progress);
-      const newRodLength = this.models.rodLength * lengthScale;
-
-      this.models.rodes.forEach((rod) => {
-        rod.scale.set(1, lengthScale, 1);
-      });
-      
-      this.models.spheres.forEach((sphere) => {
-        sphere.position.y = newRodLength / 2;
-      });
-    };
-
-    // 4. Final Collapse (The Glitch Fix)
-    // We pre-calculate where the mace *should be* at the start of this phase.
-    // Based on previous phase: Distance is 2 (from joint anim), Quaternion is fixed.
-    
-    const startDistance = 2; // From updateMaceJointAnimation end state
-    const finalRodLength = this.models.rodLength * 1.8; // From updateRodScaleAnimation end state
-    const sphereStartY = finalRodLength / 2;
-
-    const updateFinalCollapse = (progress) => {
-      // 1. Rod Scale: Deterministic Lerp
-      const rodScale = THREE.MathUtils.lerp(1.8, 0, progress);
-      this.models.rodes.forEach((rod) => rod.scale.set(1, rodScale, 1));
-
-      // 2. Sphere Position & Scale
-      const sphereCurrentY = THREE.MathUtils.lerp(sphereStartY, 0, progress);
-      const sphereFinalScale = THREE.MathUtils.lerp(1, 4, progress);
-
-      this.models.spheres.forEach((sphere) => {
-        sphere.position.y = sphereCurrentY;
-        sphere.scale.set(sphereFinalScale, sphereFinalScale, sphereFinalScale);
-      });
-
-      // 3. Mace Group Position (FIXED)
-      // Instead of relying on mace.position.length(), we calculate from constant startDistance
-      const currentDist = THREE.MathUtils.lerp(startDistance, 0, progress);
-      
-      this.models.maces.forEach((mace, index) => {
-        const q = this.models.firstAnimationQuaternions[index];
-        direction.set(0, 1, 0).applyQuaternion(q);
-        mace.position.copy(direction.multiplyScalar(currentDist));
-      });
-    };
-
-    // --- State Management ---
-    const state = {
-      reveal: 0,
-      joint: 0,
-      scale: 0,
-      collapse: 0,
-    };
-
+    // --- The Master Timeline ---
     const mainTl = gsap.timeline({
       scrollTrigger: {
         trigger: "#scroll-space",
@@ -183,28 +106,31 @@ class App {
       },
     });
 
-    // === PHASE 1 ===
+    // === PHASE 1: ASSEMBLE ===
     mainTl.addLabel("phase1")
-      .to(state, {
-          reveal: 1, duration: 15,
-          onUpdate: () => updateMaceRevealAnimation(state.reveal),
+      .to(this.state, {
+          reveal: 1, 
+          duration: 15,
+          ease: "power1.inOut"
       }, "phase1")
       .to(this.models.group.rotation, { 
           x: 0, z: 0.23, y: -0.4, duration: 15 
       }, "phase1")
-      .to(state, {
-          joint: 1, duration: 8, ease: "elastic.out(1, 0.5)",
-          onUpdate: () => updateMaceJointAnimation(state.joint),
-      }, "phase1+=7");
+      .to(this.state, {
+          joint: 1, 
+          duration: 8, 
+          // Changed from 'elastic' to 'back.out' for a cleaner, less glitchy snap
+          ease: "back.out(1.2)" 
+      }, "phase1+=7"); 
 
 
-    // === PHASE 2 ===
+    // === PHASE 2: EXPANSION & GLOW ===
     mainTl.addLabel("phase2", ">")
-      .to(state, {
-          scale: 1, duration: 25,
-          onUpdate: () => updateRodScaleAnimation(state.scale),
+      .to(this.state, {
+          scale: 1, 
+          duration: 25,
+          ease: "power1.inOut"
       }, "phase2")
-      // FIX: Ensure rotations continue from exactly where Phase 1 left off
       .to(this.models.group.rotation, { 
           x: 0.5, z: 1.4, y: 0.4, duration: 25 
       }, "phase2")
@@ -212,7 +138,7 @@ class App {
       .to(this.models.maceMaterial, { emissiveIntensity: 2.5, duration: 25 }, "phase2");
 
 
-    // === PHASE 3 ===
+    // === PHASE 3: THE VORTEX ===
     mainTl.addLabel("phase3", ">")
       .to(this.models.group.rotation, { 
           z: 3.5, y: 2, duration: 25, ease: "power2.inOut" 
@@ -228,7 +154,7 @@ class App {
       }, "phase3");
 
 
-    // === PHASE 4 (Fixed Rotations) ===
+    // === PHASE 4: FINAL COLLAPSE ===
     mainTl.addLabel("phase4", ">")
       .to(this.camera.position, { 
           z: 35, duration: 35, ease: "power2.inOut" 
@@ -236,24 +162,76 @@ class App {
       .to(this.camera.rotation, { 
           z: 0, duration: 35, ease: "power2.inOut" 
       }, "phase4")
-      .to(state, {
-          collapse: 1, duration: 35, ease: "power2.inOut",
-          onUpdate: () => updateFinalCollapse(state.collapse),
+      .to(this.state, {
+          collapse: 1, 
+          duration: 35, 
+          ease: "power2.inOut"
       }, "phase4")
       .to(this.models.maceMaterial, { 
           emissiveIntensity: 5, duration: 35 
       }, "phase4")
-      // FIX: Use Absolute values (4.0 and 1.0) instead of relative (+=2)
-      // Previous Y was 2. We want +2, so target is 4.
-      // Previous X was 0.5. We want +0.5, so target is 1.0.
       .to(this.models.group.rotation, { 
           y: 4.0, x: 1.0, duration: 35 
       }, "phase4");
   }
 
+  // --- SINGLE SOURCE OF TRUTH FOR POSITIONS ---
+  updateObjects() {
+    const dir = new THREE.Vector3(0, 1, 0);
+
+    // 1. Calculate Global Factors based on state
+    //    Dist: Starts at 3 -> Goes to 2 (Joint) -> Goes to 0 (Collapse)
+    let currentDist = THREE.MathUtils.lerp(3, 2, this.state.joint);
+    currentDist = THREE.MathUtils.lerp(currentDist, 0, this.state.collapse);
+
+    //    Rod Scale: Starts at 1 -> Goes to 1.8 (Scale) -> Goes to 0 (Collapse)
+    let currentRodScale = THREE.MathUtils.lerp(1, 1.8, this.state.scale);
+    currentRodScale = THREE.MathUtils.lerp(currentRodScale, 0, this.state.collapse);
+
+    //    Sphere Scale: Starts at 1 -> Goes to 4 (Collapse)
+    const currentSphereScale = THREE.MathUtils.lerp(1, 4, this.state.collapse);
+
+    const baseRodLength = this.models.rodLength; 
+    
+    // 2. Apply to all objects
+    this.models.maces.forEach((mace, index) => {
+        // A. Handle Rotation (Reveal)
+        const startQ = this.models.initialQuaternions[index];
+        const endQ = this.models.firstAnimationQuaternions[index];
+        mace.quaternion.copy(startQ).slerp(endQ, this.state.reveal);
+
+        // B. Handle Position (Orbit)
+        //    We calculate position based on the current rotation and the calculated global distance
+        dir.set(0, 1, 0).applyQuaternion(mace.quaternion);
+        mace.position.copy(dir.multiplyScalar(currentDist));
+    });
+
+    // 3. Update Internal Parts (Rods & Spheres)
+    this.models.rodes.forEach(rod => {
+        rod.scale.set(1, currentRodScale, 1);
+    });
+
+    const currentRodLength = baseRodLength * currentRodScale;
+    
+    // During collapse, sphere moves from rod tip to center (0)
+    let sphereY = currentRodLength / 2;
+    // However, if we are collapsing, we just want them to zero out relative to the rod logic?
+    // Actually, our previous logic was lerping Y position to 0. 
+    // Since rod length goes to 0, sphereY naturally goes to 0.
+    
+    this.models.spheres.forEach(sphere => {
+        sphere.position.y = sphereY;
+        sphere.scale.set(currentSphereScale, currentSphereScale, currentSphereScale);
+    });
+  }
+
   animate() {
     requestAnimationFrame(() => this.animate());
 
+    // 1. Calculate all physics/transforms for this frame
+    this.updateObjects();
+
+    // 2. Mouse Tilt
     if (this.tiltGroup) {
       this.targetRotation.x = this.mousePosition.y * 0.15;
       this.targetRotation.y = this.mousePosition.x * 0.15;
@@ -261,6 +239,7 @@ class App {
       this.tiltGroup.rotation.y += (this.targetRotation.y - this.tiltGroup.rotation.y) * 0.05;
     }
 
+    // 3. Particles
     if (this.models.particlesGroup) {
       this.models.particlesGroup.rotation.y += 0.001;
       this.models.particlesGroup.rotation.z -= 0.0005;

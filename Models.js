@@ -29,8 +29,8 @@ export default class Models {
     // MATERIAL
     this.maceMaterial = new THREE.MeshStandardMaterial({
       color: this.maceColor,
-      metalness: 0.6,
-      roughness: 0.4,
+      metalness: 0.5,
+      roughness: 0.6,
       emissive: 0x9e2a00,
       emissiveIntensity: 0,
     });
