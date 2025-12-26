@@ -3,7 +3,7 @@ import * as THREE from "three";
 export default class Models {
   constructor() {
     this.group = new THREE.Group();
-    this.particlesGroup = new THREE.Group(); // New Group for particles
+    this.particlesGroup = new THREE.Group();
     this.is_ready = false;
     this.maces = [];
     this.rodes = [];
@@ -26,13 +26,13 @@ export default class Models {
       32
     );
 
-    // MATERIAL - Tweaked for better lighting response
+    // MATERIAL
     this.maceMaterial = new THREE.MeshStandardMaterial({
       color: this.maceColor,
       metalness: 0.6,
       roughness: 0.4,
-      emissive: 0x9e2a00, // Base glow color (dark red/orange)
-      emissiveIntensity: 0, // Starts off
+      emissive: 0x9e2a00,
+      emissiveIntensity: 0,
     });
 
     // INITIAL POSITION
@@ -60,7 +60,7 @@ export default class Models {
     ];
 
     this.initMaces(sphereGeometry, rodGeometry);
-    this.initParticles(); // Initialize the new particles
+    this.initParticles();
     
     this.group.add(this.particlesGroup);
   }
@@ -99,14 +99,13 @@ export default class Models {
     }
   }
 
-  // NEW: Create floating dust/stars
   initParticles() {
     const geometry = new THREE.BufferGeometry();
     const count = 400;
     const positions = new Float32Array(count * 3);
 
     for(let i = 0; i < count * 3; i++) {
-        positions[i] = (Math.random() - 0.5) * 25; // Spread area
+        positions[i] = (Math.random() - 0.5) * 25;
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -114,7 +113,7 @@ export default class Models {
     const material = new THREE.PointsMaterial({
         size: 0.05,
         sizeAttenuation: true,
-        color: 0xffe066, // Matches your light color
+        color: 0xffe066,
         transparent: true,
         opacity: 0.6,
     });
