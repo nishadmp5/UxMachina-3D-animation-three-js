@@ -9,6 +9,8 @@ gsap.registerPlugin(ScrollTrigger, EasePack);
 class App {
   constructor() {
     this.scene = new THREE.Scene();
+    
+    // Fog helps blend objects into the background color at distance
     this.scene.fog = new THREE.FogExp2(0x000000, 0.02);
 
     this.camera = new THREE.PerspectiveCamera(
@@ -31,6 +33,7 @@ class App {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
+    // --- Lighting ---
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
     this.scene.add(ambientLight);
 
@@ -43,12 +46,14 @@ class App {
 
     const spotLight = new THREE.SpotLight(0x4a7aff, 10);
     spotLight.position.set(15, 0, -10);
-    spotLight.lookAt(0,0,0);
+    spotLight.lookAt(0, 0, 0);
     this.scene.add(spotLight);
 
+    // --- Models ---
     this.models = new Models();
     this.models.group.rotation.y = -0.75;
 
+    // Enable shadows for all meshes
     this.models.group.traverse((child) => {
       if (child.isMesh) {
         child.castShadow = true;
@@ -66,14 +71,14 @@ class App {
     this.setupMouseListener();
     this.setupScrollAnimation();
     this.animate();
-    
-    window.addEventListener('resize', () => this.onWindowResize(), false);
+
+    window.addEventListener("resize", () => this.onWindowResize(), false);
   }
 
   onWindowResize() {
-      this.camera.aspect = window.innerWidth / window.innerHeight;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
   setupMouseListener() {
@@ -86,7 +91,9 @@ class App {
   setupScrollAnimation() {
     const direction = new THREE.Vector3(0, 1, 0);
 
-    // --- Helpers ---
+    // --- Update Helpers (Logic decoupled from GSAP) ---
+
+    // 1. Unfold Maces
     const updateMaceRevealAnimation = (progress) => {
       this.models.maces.forEach((mace, index) => {
         const startQuaternion = this.models.initialQuaternions[index];
@@ -98,6 +105,7 @@ class App {
       });
     };
 
+    // 2. Snap Joints
     const updateMaceJointAnimation = (progress) => {
       this.models.maces.forEach((mace, index) => {
         const currentQuaternion = this.models.firstAnimationQuaternions[index];
@@ -107,122 +115,140 @@ class App {
       });
     };
 
+    // 3. Extend Rods
     const updateRodScaleAnimation = (progress) => {
-       const lengthScale = THREE.MathUtils.lerp(1, 1.8, progress);
-       this.models.rodes.forEach((rod) => {
-         rod.scale.set(1, lengthScale, 1);
-       });
-       const newRodLength = this.models.rodLength * lengthScale;
-       this.models.spheres.forEach((sphere) => {
-         sphere.position.y = newRodLength / 2;
-       });
+      const lengthScale = THREE.MathUtils.lerp(1, 1.8, progress);
+      this.models.rodes.forEach((rod) => {
+        rod.scale.set(1, lengthScale, 1);
+      });
+      const newRodLength = this.models.rodLength * lengthScale;
+      this.models.spheres.forEach((sphere) => {
+        sphere.position.y = newRodLength / 2;
+      });
     };
 
-    // --- NEW Helper for Final Collapse ---
-    const finalRodLength = this.models.rodLength * 1.8; // Length at end of tl2
-    const sphereStartY = finalRodLength / 2; 
+    // 4. Final Collapse (Merge to Single Sphere)
+    const finalRodLength = this.models.rodLength * 1.8;
+    const sphereStartY = finalRodLength / 2;
 
     const updateFinalCollapse = (progress) => {
-        // 1. Shrink rods to zero scale
-        const rodScale = THREE.MathUtils.lerp(1.8, 0, progress);
-        this.models.rodes.forEach(rod => rod.scale.set(1, rodScale, 1));
+      // Shrink rods
+      const rodScale = THREE.MathUtils.lerp(1.8, 0, progress);
+      this.models.rodes.forEach((rod) => rod.scale.set(1, rodScale, 1));
 
-        // 2. Move spheres to local 0,0,0 and scale them UP into one big ball
-        const sphereCurrentY = THREE.MathUtils.lerp(sphereStartY, 0, progress);
-        const sphereFinalScale = THREE.MathUtils.lerp(1, 4, progress); // Scale up to 4x
+      // Move spheres to center and scale UP
+      const sphereCurrentY = THREE.MathUtils.lerp(sphereStartY, 0, progress);
+      const sphereFinalScale = THREE.MathUtils.lerp(1, 4, progress);
 
-        this.models.spheres.forEach(sphere => {
-             sphere.position.y = sphereCurrentY;
-             sphere.scale.set(sphereFinalScale, sphereFinalScale, sphereFinalScale);
-        });
+      this.models.spheres.forEach((sphere) => {
+        sphere.position.y = sphereCurrentY;
+        sphere.scale.set(sphereFinalScale, sphereFinalScale, sphereFinalScale);
+      });
 
-        // 3. Move the Mace Groups to absolute center
-        this.models.maces.forEach(mace => {
-            // Current distance is approx 2. Target is 0.
-            const currentDist = mace.position.length();
-            const newDist = THREE.MathUtils.lerp(currentDist, 0, progress);
-            mace.position.setLength(newDist);
-        });
-    }
+      // Pull mace groups to absolute center
+      this.models.maces.forEach((mace) => {
+        const currentDist = mace.position.length();
+        const newDist = THREE.MathUtils.lerp(currentDist, 0, progress);
+        mace.position.setLength(newDist);
+      });
+    };
 
+    // --- State Objects ---
+    const state = {
+      reveal: 0,
+      joint: 0,
+      scale: 0,
+      collapse: 0,
+    };
 
-    // --- Timeline 1: The Assemble (0% - 15%) ---
-    const tl1 = gsap.timeline({
+    // --- The Master Timeline ---
+    const mainTl = gsap.timeline({
       scrollTrigger: {
         trigger: "#scroll-space",
         start: "top top",
-        end: "top+=15% top",
-        scrub: 1,
-      },
-    });
-    const revealState = { progress: 0 };
-    const jointState = { progress: 0 };
-    tl1.to(revealState, { progress: 1, duration: 2, onUpdate: () => updateMaceRevealAnimation(revealState.progress) })
-       .to(this.models.group.rotation, { x: 0, z: 0.23, y: -0.4, duration: 2 }, "<")
-       .to(jointState, { progress: 1, duration: 1, ease: "elastic.out(1, 0.5)", onUpdate: () => updateMaceJointAnimation(jointState.progress) });
-
-    // --- Timeline 2: The Expansion & Glow (15% - 40%) ---
-    const tl2 = gsap.timeline({
-        scrollTrigger: {
-          trigger: "#scroll-space",
-          start: "top+=15% top",
-          end: "top+=40% top",
-          scrub: 1,
-        },
-    });
-    const maceScaleState = { progress: 0 };
-    tl2.to(maceScaleState, { progress: 1, onUpdate: () => updateRodScaleAnimation(maceScaleState.progress) })
-       .to(this.models.group.rotation, { x: 0.5, z: 1.4, y: 0.4 }, "<")
-       .to(this.camera.position, { z: 11 }, "<")
-       .to(this.models.maceMaterial, { emissiveIntensity: 2.5 }, "<");
-
-
-    // --- Timeline 3: The Vortex Zoom In (40% - 65%) ---
-    const tl3 = gsap.timeline({
-        scrollTrigger: {
-          trigger: "#scroll-space",
-          start: "top+=40% top",
-          end: "top+=65% top",
-          scrub: 1,
-        },
-    });
-    tl3.to(this.models.group.rotation, { z: 3.5, y: 2, ease: "power2.inOut" })
-       .to(this.camera.position, { z: 4, ease: "power2.in" }, "<")
-       .to(this.camera.rotation, { z: -0.5 }, "<")
-       .to(this.models.particlesGroup.scale, { x: 2, y: 2, z: 2 }, "<");
-
-    // --- Timeline 4: Final Collapse into Single Ball (65% - 100%) ---
-    const tl4 = gsap.timeline({
-      scrollTrigger: {
-        trigger: "#scroll-space",
-        start: "top+=65% top",
         end: "bottom bottom",
-        scrub: 1,
+        scrub: 1.5, // Smoother scrubbing
       },
     });
 
-    const collapseState = { progress: 0 };
+    // We use absolute durations to represent proportions of the scroll height.
+    // Phase 1 (15%), Phase 2 (25%), Phase 3 (25%), Phase 4 (35%)
+    // Total Duration units = 100
 
-    // 1. Zoom Camera Far Out and reset rotation
-    tl4.to(this.camera.position, { z: 35, duration: 3, ease: "power2.inOut" })
-       .to(this.camera.rotation, { z: 0, duration: 3, ease: "power2.inOut" }, "<")
-       // 2. Collapse maces into one big sphere
-       .to(collapseState, { 
-           progress: 1, 
-           duration: 3, 
-           ease: "power2.inOut",
-           onUpdate: () => updateFinalCollapse(collapseState.progress)
-       }, "<0.5") // Start slightly after camera begins moving
-       // 3. Intensify glow for final sphere
-       .to(this.models.maceMaterial, { emissiveIntensity: 5 }, "<")
-       // 4. Rotate the final ball gently
-       .to(this.models.group.rotation, { y: "+=2", x: "+=0.5", duration: 3}, "<");
+    // === PHASE 1: ASSEMBLE (Duration 15) ===
+    mainTl.addLabel("phase1")
+      .to(state, {
+          reveal: 1,
+          duration: 15,
+          onUpdate: () => updateMaceRevealAnimation(state.reveal),
+      }, "phase1")
+      .to(this.models.group.rotation, { 
+          x: 0, z: 0.23, y: -0.4, duration: 15 
+      }, "phase1")
+      .to(state, {
+          joint: 1,
+          duration: 8, // Joints snap faster than the full reveal
+          ease: "elastic.out(1, 0.5)",
+          onUpdate: () => updateMaceJointAnimation(state.joint),
+      }, "phase1+=7"); 
 
+
+    // === PHASE 2: EXPANSION & GLOW (Duration 25) ===
+    mainTl.addLabel("phase2", ">") // Starts immediately after Phase 1
+      .to(state, {
+          scale: 1,
+          duration: 25,
+          onUpdate: () => updateRodScaleAnimation(state.scale),
+      }, "phase2")
+      .to(this.models.group.rotation, { 
+          x: 0.5, z: 1.4, y: 0.4, duration: 25 
+      }, "phase2")
+      .to(this.camera.position, { z: 11, duration: 25 }, "phase2")
+      .to(this.models.maceMaterial, { emissiveIntensity: 2.5, duration: 25 }, "phase2");
+
+
+    // === PHASE 3: THE VORTEX (Duration 25) ===
+    mainTl.addLabel("phase3", ">")
+      .to(this.models.group.rotation, { 
+          z: 3.5, y: 2, duration: 25, ease: "power2.inOut" 
+      }, "phase3")
+      .to(this.camera.position, { 
+          z: 4, duration: 25, ease: "power2.in" 
+      }, "phase3")
+      .to(this.camera.rotation, { 
+          z: -0.5, duration: 25 
+      }, "phase3")
+      .to(this.models.particlesGroup.scale, { 
+          x: 2, y: 2, z: 2, duration: 25 
+      }, "phase3");
+
+
+    // === PHASE 4: FINAL COLLAPSE (Duration 35) ===
+    mainTl.addLabel("phase4", ">")
+      .to(this.camera.position, { 
+          z: 35, duration: 35, ease: "power2.inOut" 
+      }, "phase4")
+      .to(this.camera.rotation, { 
+          z: 0, duration: 35, ease: "power2.inOut" 
+      }, "phase4")
+      .to(state, {
+          collapse: 1,
+          duration: 35,
+          ease: "power2.inOut",
+          onUpdate: () => updateFinalCollapse(state.collapse),
+      }, "phase4")
+      .to(this.models.maceMaterial, { 
+          emissiveIntensity: 5, duration: 35 
+      }, "phase4")
+      .to(this.models.group.rotation, { 
+          y: "+=2", x: "+=0.5", duration: 35 
+      }, "phase4");
   }
 
   animate() {
     requestAnimationFrame(() => this.animate());
 
+    // Mouse Tilt Logic
     if (this.tiltGroup) {
       this.targetRotation.x = this.mousePosition.y * 0.15;
       this.targetRotation.y = this.mousePosition.x * 0.15;
@@ -230,9 +256,10 @@ class App {
       this.tiltGroup.rotation.y += (this.targetRotation.y - this.tiltGroup.rotation.y) * 0.05;
     }
 
+    // Passive Particle Rotation
     if (this.models.particlesGroup) {
-        this.models.particlesGroup.rotation.y += 0.001;
-        this.models.particlesGroup.rotation.z -= 0.0005;
+      this.models.particlesGroup.rotation.y += 0.001;
+      this.models.particlesGroup.rotation.z -= 0.0005;
     }
 
     this.renderer.render(this.scene, this.camera);
