@@ -66,13 +66,11 @@ class App {
     this.targetRotation = { x: 0, y: 0 };
 
     // --- CENTRAL STATE OBJECT ---
-    // GSAP will only modify these numbers. 
-    // The visual updates happen in the animate() loop.
     this.state = {
-      reveal: 0,   // 0 to 1 (Rotation)
-      joint: 0,    // 0 to 1 (Snap together)
-      scale: 0,    // 0 to 1 (Rods grow)
-      collapse: 0, // 0 to 1 (Final merge)
+      reveal: 0,   // 0 -> 1 (Maces appear)
+      joint: 0,    // 0 -> 1 (Maces snap together)
+      scale: 0,    // 0 -> 1 (Rods grow to max), then 1 -> 0 (Shrink back)
+      collapse: 0, // 0 -> 1 (Everything merges to center)
     };
 
     this.setupMouseListener();
@@ -96,7 +94,6 @@ class App {
   }
 
   setupScrollAnimation() {
-    // --- The Master Timeline ---
     const mainTl = gsap.timeline({
       scrollTrigger: {
         trigger: "#scroll-space",
@@ -106,7 +103,7 @@ class App {
       },
     });
 
-    // === PHASE 1: ASSEMBLE ===
+    // === PHASE 1: ASSEMBLE (0% - 15%) ===
     mainTl.addLabel("phase1")
       .to(this.state, {
           reveal: 1, 
@@ -119,108 +116,119 @@ class App {
       .to(this.state, {
           joint: 1, 
           duration: 8, 
-          // Changed from 'elastic' to 'back.out' for a cleaner, less glitchy snap
           ease: "back.out(1.2)" 
       }, "phase1+=7"); 
 
 
-    // === PHASE 2: EXPANSION & GLOW ===
+    // === PHASE 2: EXPANSION (15% - 35%) ===
+    // Rods grow OUT
     mainTl.addLabel("phase2", ">")
       .to(this.state, {
-          scale: 1, 
-          duration: 25,
+          scale: 1, // Grow to Max (1.8x)
+          duration: 20,
           ease: "power1.inOut"
       }, "phase2")
       .to(this.models.group.rotation, { 
-          x: 0.5, z: 1.4, y: 0.4, duration: 25 
+          x: 0.5, z: 1.4, y: 0.4, duration: 20 
       }, "phase2")
-      .to(this.camera.position, { z: 11, duration: 25 }, "phase2")
-      .to(this.models.maceMaterial, { emissiveIntensity: 2.5, duration: 25 }, "phase2");
+      .to(this.camera.position, { z: 11, duration: 20 }, "phase2")
 
 
-    // === PHASE 3: THE VORTEX ===
+    // === PHASE 2.5: RETRACTION (35% - 55%) === 
+    // NEW: Rods shrink back IN while rotating
+    mainTl.addLabel("phase2_retract", ">")
+      .to(this.state, {
+          scale: 0, // Shrink back to Original (1.0x)
+          duration: 20, 
+          ease: "power2.inOut"
+      }, "phase2_retract")
+      // Perform a significant rotation during the shrink
+      .to(this.models.group.rotation, { 
+          x: -0.5, // Tipping forward
+          y: 2.5,  // Big spin
+          z: 0.5,
+          duration: 20,
+          ease: "power1.inOut"
+      }, "phase2_retract")
+     
+
+
+    // === PHASE 3: THE VORTEX (55% - 75%) ===
     mainTl.addLabel("phase3", ">")
       .to(this.models.group.rotation, { 
-          z: 3.5, y: 2, duration: 25, ease: "power2.inOut" 
+          z: 3, y: 5.0, // Continue spinning faster
+          duration: 20, 
+          ease: "power2.inOut" 
       }, "phase3")
       .to(this.camera.position, { 
-          z: 4, duration: 25, ease: "power2.in" 
+          z: 4, duration: 20, ease: "power2.in" 
       }, "phase3")
       .to(this.camera.rotation, { 
-          z: -0.5, duration: 25 
+          z: -0.5, duration: 20 
       }, "phase3")
       .to(this.models.particlesGroup.scale, { 
-          x: 2, y: 2, z: 2, duration: 25 
+          x: 2, y: 2, z: 2, duration: 20 
       }, "phase3");
 
 
-    // === PHASE 4: FINAL COLLAPSE ===
+    // === PHASE 4: FINAL COLLAPSE (75% - 100%) ===
     mainTl.addLabel("phase4", ">")
       .to(this.camera.position, { 
-          z: 35, duration: 35, ease: "power2.inOut" 
+          z: 35, duration: 25, ease: "power2.inOut" 
       }, "phase4")
       .to(this.camera.rotation, { 
-          z: 0, duration: 35, ease: "power2.inOut" 
+          z: 0, duration: 25, ease: "power2.inOut" 
       }, "phase4")
       .to(this.state, {
           collapse: 1, 
-          duration: 35, 
+          duration: 25, 
           ease: "power2.inOut"
       }, "phase4")
       .to(this.models.maceMaterial, { 
-          emissiveIntensity: 5, duration: 35 
+          emissiveIntensity: 3, duration: 25 
       }, "phase4")
       .to(this.models.group.rotation, { 
-          y: 4.0, x: 1.0, duration: 35 
+          y: 7.0, x: 1.0, duration: 25 
       }, "phase4");
   }
 
-  // --- SINGLE SOURCE OF TRUTH FOR POSITIONS ---
   updateObjects() {
     const dir = new THREE.Vector3(0, 1, 0);
 
-    // 1. Calculate Global Factors based on state
-    //    Dist: Starts at 3 -> Goes to 2 (Joint) -> Goes to 0 (Collapse)
+    // 1. Global Distance Logic
     let currentDist = THREE.MathUtils.lerp(3, 2, this.state.joint);
     currentDist = THREE.MathUtils.lerp(currentDist, 0, this.state.collapse);
 
-    //    Rod Scale: Starts at 1 -> Goes to 1.8 (Scale) -> Goes to 0 (Collapse)
+    // 2. Rod Scale Logic (Handles Grow AND Shrink)
+    // state.scale 0->1 makes it 1.8x. state.scale 1->0 makes it 1.0x.
     let currentRodScale = THREE.MathUtils.lerp(1, 1.8, this.state.scale);
+    // state.collapse 0->1 makes it 0x.
     currentRodScale = THREE.MathUtils.lerp(currentRodScale, 0, this.state.collapse);
 
-    //    Sphere Scale: Starts at 1 -> Goes to 4 (Collapse)
     const currentSphereScale = THREE.MathUtils.lerp(1, 4, this.state.collapse);
-
     const baseRodLength = this.models.rodLength; 
     
-    // 2. Apply to all objects
+    // 3. Apply Transforms
     this.models.maces.forEach((mace, index) => {
-        // A. Handle Rotation (Reveal)
         const startQ = this.models.initialQuaternions[index];
         const endQ = this.models.firstAnimationQuaternions[index];
         mace.quaternion.copy(startQ).slerp(endQ, this.state.reveal);
 
-        // B. Handle Position (Orbit)
-        //    We calculate position based on the current rotation and the calculated global distance
         dir.set(0, 1, 0).applyQuaternion(mace.quaternion);
         mace.position.copy(dir.multiplyScalar(currentDist));
     });
 
-    // 3. Update Internal Parts (Rods & Spheres)
     this.models.rodes.forEach(rod => {
         rod.scale.set(1, currentRodScale, 1);
     });
 
+    // 4. Ball Position Logic
+    // Since we calculate this based on the *current* rod scale every frame,
+    // the balls will perfectly follow the rods growing and shrinking.
     const currentRodLength = baseRodLength * currentRodScale;
     
-    // During collapse, sphere moves from rod tip to center (0)
-    let sphereY = currentRodLength / 2;
-    // However, if we are collapsing, we just want them to zero out relative to the rod logic?
-    // Actually, our previous logic was lerping Y position to 0. 
-    // Since rod length goes to 0, sphereY naturally goes to 0.
-    
     this.models.spheres.forEach(sphere => {
-        sphere.position.y = sphereY;
+        sphere.position.y = currentRodLength / 2;
         sphere.scale.set(currentSphereScale, currentSphereScale, currentSphereScale);
     });
   }
@@ -228,10 +236,8 @@ class App {
   animate() {
     requestAnimationFrame(() => this.animate());
 
-    // 1. Calculate all physics/transforms for this frame
     this.updateObjects();
 
-    // 2. Mouse Tilt
     if (this.tiltGroup) {
       this.targetRotation.x = this.mousePosition.y * 0.15;
       this.targetRotation.y = this.mousePosition.x * 0.15;
@@ -239,7 +245,6 @@ class App {
       this.tiltGroup.rotation.y += (this.targetRotation.y - this.tiltGroup.rotation.y) * 0.05;
     }
 
-    // 3. Particles
     if (this.models.particlesGroup) {
       this.models.particlesGroup.rotation.y += 0.001;
       this.models.particlesGroup.rotation.z -= 0.0005;
